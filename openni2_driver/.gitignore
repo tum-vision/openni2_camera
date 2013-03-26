@@ -1,0 +1,5 @@
+include
+lib
+openni2_src
+rospack_nosubdir
+

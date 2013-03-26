@@ -1,0 +1,16 @@
+<package>
+  <description brief="openni2_driver">
+
+     Wrapper for OpenNI2 library
+
+  </description>
+  <author>Christian Kerl</author>
+  <license>Apache</license>
+  <review status="3rdparty" notes=""/>
+  <url></url>
+  <export>
+    <cpp cflags="-I${prefix}/include/" lflags="-L${prefix}/lib -lOpenNI2" />
+  </export>
+</package>
+
+

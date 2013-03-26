@@ -1,0 +1,11 @@
+bin
+build
+docs
+cfg/cpp
+cfg/*.cfgc
+src/openni2_camera
+mainpage.dox
+cmake_install.cmake
+.project
+.cproject
+.pydevproject
