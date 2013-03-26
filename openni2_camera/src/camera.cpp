@@ -288,8 +288,7 @@ public:
   virtual void advertise(image_transport::ImageTransport& it)
   {
     SensorStreamManager::advertise(it);
-    //callback_ = boost::bind(&DepthSensorStreamManager::onSubscriptionChanged, this, _1);
-    //publisher_ = it.advertiseCamera(name_ + "/image_raw", 1, callback_, callback_);
+
     depth_registered_publisher_ = it.advertiseCamera(name_ + "_registered/image_raw", 1, callback_, callback_);
     disparity_publisher_  = it.advertiseCamera("depth/disparity", 1, callback_, callback_);
     disparity_registered_publisher_  = it.advertiseCamera("depth_registered/disparity", 1, callback_, callback_);
@@ -304,10 +303,7 @@ public:
 
     if(!running_ && all_clients > 0)
     {
-      if(stream_.start() == STATUS_OK)
-      {
-        running_ = true;
-      }
+      running_ = (stream_.start() == STATUS_OK);
     }
     else if(running_ && all_clients == 0)
     {
@@ -516,7 +512,10 @@ public:
       ResolutionMap::iterator e = resolutions_.find(cfg.depth_resolution);
       assert(e != resolutions_.end());
 
-      depth_sensor_->tryConfigureVideoMode(e->second);
+      VideoMode m = e->second;
+      m.setPixelFormat(PIXEL_FORMAT_DEPTH_1_MM);
+
+      depth_sensor_->tryConfigureVideoMode(m);
     }
 
     // ir
@@ -585,7 +584,6 @@ public:
     }
 
     device_.setDepthColorSyncEnabled(true);
-    //ROS_WARN_STREAM_COND(!device_.getDepthColorSyncEnabled(), "framesync lost!");
   }
 private:
   image_transport::ImageTransport it_;
