@@ -5,7 +5,9 @@ GIT_DIR = openni2_src
 # GIT_URL: full URL to download
 GIT_URL=-b develop git://github.com/OpenNI/OpenNI2.git
 #	GIT_PATCH: your (list of) patch file(s) to patch the downloaded software
-#	GIT_REVISION:  -
+GIT_REVISION=8795dda219d662f6f1397c66b8486e263df1ce5f
+#df26018885ec357f4e418be80fa735a8c011215a
+#a5cb66c516361ec5e0c9051fab1fda5562d1e06f
 
 include $(shell rospack find mk)/git_checkout.mk
 
