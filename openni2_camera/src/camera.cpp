@@ -25,6 +25,7 @@
 #include <openni2_camera/CameraConfig.h>
 
 #include <image_transport/image_transport.h>
+#include <camera_info_manager/camera_info_manager.h>
 #include <sensor_msgs/image_encodings.h>
 #include <dynamic_reconfigure/server.h>
 
@@ -139,11 +140,6 @@ public:
   {
     throw MethodNotSupportedException("SensorStreamManagerBase::endConfigure()");
   }
-
-  virtual void advertise(image_transport::ImageTransport& it)
-  {
-    throw MethodNotSupportedException("SensorStreamManagerBase::advertise()");
-  }
 };
 
 class SensorStreamManager : public SensorStreamManagerBase, public VideoStream::NewFrameListener
@@ -155,6 +151,8 @@ protected:
   std::string name_;
   bool running_, was_running_;
 
+  ros::NodeHandle nh_;
+  image_transport::ImageTransport it_;
   image_transport::CameraPublisher publisher_;
   image_transport::SubscriberStatusCallback callback_;
 
@@ -163,13 +161,18 @@ protected:
     publisher_.publish(image, camera_info);
   }
 public:
-  SensorStreamManager(Device& device, SensorType type, std::string name, VideoMode& default_mode) :
+  SensorStreamManager(ros::NodeHandle& nh, Device& device, SensorType type, std::string name, VideoMode& default_mode) :
     device_(device),
     default_mode_(default_mode),
     name_(name),
-    running_(false)
+    running_(false),
+    nh_(nh, name_),
+    it_(nh_)
   {
     assert(device_.hasSensor(type));
+
+    callback_ = boost::bind(&SensorStreamManager::onSubscriptionChanged, this, _1);
+    publisher_ = it_.advertiseCamera("image_raw", 1, callback_, callback_);
 
     ROS_ERROR_STREAM_COND(stream_.create(device_, type) != STATUS_OK, "Failed to create stream '" << toString(type) << "'!");
     stream_.addNewFrameListener(this);
@@ -188,12 +191,6 @@ public:
   virtual VideoStream& stream()
   {
     return stream_;
-  }
-
-  virtual void advertise(image_transport::ImageTransport& it)
-  {
-    callback_ = boost::bind(&SensorStreamManager::onSubscriptionChanged, this, _1);
-    publisher_ = it.advertiseCamera(name_ + "/image_raw", 1, callback_, callback_);
   }
 
   virtual bool beginConfigure()
@@ -335,6 +332,8 @@ public:
 class DepthSensorStreamManager : public SensorStreamManager
 {
 protected:
+  ros::NodeHandle nh_registered_;
+  image_transport::ImageTransport it_registered_;
   image_transport::CameraPublisher depth_registered_publisher_, disparity_publisher_, disparity_registered_publisher_, *active_publisher_;
 
   virtual void publish(sensor_msgs::Image& image, sensor_msgs::CameraInfo& camera_info)
@@ -368,17 +367,14 @@ protected:
     }
   }
 public:
-  DepthSensorStreamManager(Device& device, VideoMode& default_mode) : SensorStreamManager(device, SENSOR_DEPTH, "depth", default_mode)
+  DepthSensorStreamManager(ros::NodeHandle& nh, Device& device, VideoMode& default_mode) :
+    SensorStreamManager(nh, device, SENSOR_DEPTH, "depth", default_mode),
+    nh_registered_(nh, "depth_registered"),
+    it_registered_(nh_registered_)
   {
-  }
-
-  virtual void advertise(image_transport::ImageTransport& it)
-  {
-    SensorStreamManager::advertise(it);
-
-    depth_registered_publisher_ = it.advertiseCamera(name_ + "_registered/image_raw", 1, callback_, callback_);
-    disparity_publisher_  = it.advertiseCamera(name_ + "/disparity", 1, callback_, callback_);
-    disparity_registered_publisher_  = it.advertiseCamera(name_ + "_registered/disparity", 1, callback_, callback_);
+    depth_registered_publisher_ = it_registered_.advertiseCamera("image_raw", 1, callback_, callback_);
+    disparity_publisher_ = it_.advertiseCamera("disparity", 1, callback_, callback_);
+    disparity_registered_publisher_ = it_registered_.advertiseCamera("disparity", 1, callback_, callback_);
   }
 
   virtual void onSubscriptionChanged(const image_transport::SingleSubscriberPublisher& topic)
@@ -418,7 +414,6 @@ class CameraImpl
 {
 public:
   CameraImpl(ros::NodeHandle& nh, ros::NodeHandle& nh_private, openni::Device& device) :
-    it_(nh),
     rgb_sensor_(new SensorStreamManagerBase()),
     depth_sensor_(new SensorStreamManagerBase()),
     ir_sensor_(new SensorStreamManagerBase()),
@@ -433,20 +428,17 @@ public:
 
     if(device_.hasSensor(SENSOR_COLOR))
     {
-      rgb_sensor_.reset(new SensorStreamManager(device_, SENSOR_COLOR, "rgb", resolutions_[Camera_RGB_640x480_30Hz]));
-      rgb_sensor_->advertise(it_);
+      rgb_sensor_.reset(new SensorStreamManager(nh, device_, SENSOR_COLOR, "rgb", resolutions_[Camera_RGB_640x480_30Hz]));
     }
 
     if(device_.hasSensor(SENSOR_DEPTH))
     {
-      depth_sensor_.reset(new DepthSensorStreamManager(device_, resolutions_[Camera_DEPTH_640x480_30Hz]));
-      depth_sensor_->advertise(it_);
+      depth_sensor_.reset(new DepthSensorStreamManager(nh, device_, resolutions_[Camera_DEPTH_640x480_30Hz]));
     }
 
     if(device_.hasSensor(SENSOR_IR))
     {
-      ir_sensor_.reset(new SensorStreamManager(device_, SENSOR_IR, "ir", resolutions_[Camera_IR_640x480_30Hz]));
-      ir_sensor_->advertise(it_);
+      ir_sensor_.reset(new SensorStreamManager(nh, device_, SENSOR_IR, "ir", resolutions_[Camera_IR_640x480_30Hz]));
     }
 
     reconfigure_server_.setCallback(boost::bind(&CameraImpl::configure, this, _1, _2));
@@ -628,7 +620,6 @@ public:
     device_.setDepthColorSyncEnabled(true);
   }
 private:
-  image_transport::ImageTransport it_;
   boost::shared_ptr<SensorStreamManagerBase> rgb_sensor_, depth_sensor_, ir_sensor_;
   dynamic_reconfigure::Server<CameraConfig> reconfigure_server_;
 
