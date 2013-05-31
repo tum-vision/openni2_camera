@@ -97,7 +97,56 @@ std::string toString(const SensorType& type)
   }
 }
 
-class SensorStreamManager : public VideoStream::NewFrameListener
+class MethodNotSupportedException : std::exception
+{
+private:
+  std::string cause_;
+public:
+  MethodNotSupportedException(const char* method) throw()
+  {
+    cause_ = "Method '" + std::string(method) + "' is not supported!";
+  }
+  virtual ~MethodNotSupportedException() throw() { }
+
+  virtual const char* what() const throw()
+  {
+    return cause_.c_str();
+  }
+};
+
+class SensorStreamManagerBase
+{
+public:
+  SensorStreamManagerBase() {}
+  virtual ~SensorStreamManagerBase() {}
+
+  virtual VideoStream& stream()
+  {
+    throw MethodNotSupportedException("SensorStreamManagerBase::stream()");
+  }
+
+  virtual bool beginConfigure()
+  {
+    return false;
+  }
+
+  virtual bool tryConfigureVideoMode(VideoMode& mode)
+  {
+    throw MethodNotSupportedException("SensorStreamManagerBase::tryConfigureVideoMode()");
+  }
+
+  virtual void endConfigure()
+  {
+    throw MethodNotSupportedException("SensorStreamManagerBase::endConfigure()");
+  }
+
+  virtual void advertise(image_transport::ImageTransport& it)
+  {
+    throw MethodNotSupportedException("SensorStreamManagerBase::advertise()");
+  }
+};
+
+class SensorStreamManager : public SensorStreamManagerBase, public VideoStream::NewFrameListener
 {
 protected:
   Device& device_;
@@ -108,6 +157,11 @@ protected:
 
   image_transport::CameraPublisher publisher_;
   image_transport::SubscriberStatusCallback callback_;
+
+  virtual void publish(sensor_msgs::Image& image, sensor_msgs::CameraInfo& camera_info)
+  {
+    publisher_.publish(image, camera_info);
+  }
 public:
   SensorStreamManager(Device& device, SensorType type, std::string name, VideoMode& default_mode) :
     device_(device),
@@ -131,7 +185,7 @@ public:
     publisher_.shutdown();
   }
 
-  VideoStream& stream()
+  virtual VideoStream& stream()
   {
     return stream_;
   }
@@ -142,11 +196,13 @@ public:
     publisher_ = it.advertiseCamera(name_ + "/image_raw", 1, callback_, callback_);
   }
 
-  virtual void beginConfigure()
+  virtual bool beginConfigure()
   {
     was_running_ = running_;
     if(was_running_) stream_.stop();
     running_ = false;
+
+    return true;
   }
 
   virtual void endConfigure()
@@ -274,11 +330,6 @@ public:
 
     publish(img, info);
   }
-
-  virtual void publish(sensor_msgs::Image& image, sensor_msgs::CameraInfo& camera_info)
-  {
-    publisher_.publish(image, camera_info);
-  }
 };
 
 class DepthSensorStreamManager : public SensorStreamManager
@@ -286,6 +337,36 @@ class DepthSensorStreamManager : public SensorStreamManager
 protected:
   image_transport::CameraPublisher depth_registered_publisher_, disparity_publisher_, disparity_registered_publisher_, *active_publisher_;
 
+  virtual void publish(sensor_msgs::Image& image, sensor_msgs::CameraInfo& camera_info)
+  {
+    active_publisher_->publish(image, camera_info);
+  }
+
+  void updateActivePublisher()
+  {
+    if(device_.getImageRegistrationMode() == IMAGE_REGISTRATION_DEPTH_TO_COLOR)
+    {
+      if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_DEPTH_1_MM)
+      {
+        active_publisher_ = &depth_registered_publisher_;
+      }
+      else if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_SHIFT_9_2)
+      {
+        active_publisher_ = &disparity_registered_publisher_;
+      }
+    }
+    else
+    {
+      if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_DEPTH_1_MM)
+      {
+        active_publisher_ = &publisher_;
+      }
+      else if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_SHIFT_9_2)
+      {
+        active_publisher_ = &disparity_publisher_;
+      }
+    }
+  }
 public:
   DepthSensorStreamManager(Device& device, VideoMode& default_mode) : SensorStreamManager(device, SENSOR_DEPTH, "depth", default_mode)
   {
@@ -315,6 +396,11 @@ public:
       stream_.stop();
       running_ = false;
     }
+
+    if(running_)
+    {
+      updateActivePublisher();
+    }
   }
 
   virtual void endConfigure()
@@ -323,34 +409,8 @@ public:
 
     if(running_)
     {
-      if(device_.getImageRegistrationMode() == IMAGE_REGISTRATION_DEPTH_TO_COLOR)
-      {
-        if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_DEPTH_1_MM)
-        {
-          active_publisher_ = &depth_registered_publisher_;
-        }
-        else if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_SHIFT_9_2)
-        {
-          active_publisher_ = &disparity_registered_publisher_;
-        }
-      }
-      else
-      {
-        if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_DEPTH_1_MM)
-        {
-          active_publisher_ = &publisher_;
-        }
-        else if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_SHIFT_9_2)
-        {
-          active_publisher_ = &disparity_publisher_;
-        }
-      }
+      updateActivePublisher();
     }
-  }
-
-  virtual void publish(sensor_msgs::Image& image, sensor_msgs::CameraInfo& camera_info)
-  {
-    active_publisher_->publish(image, camera_info);
   }
 };
 
@@ -373,20 +433,29 @@ public:
       rgb_sensor_.reset(new SensorStreamManager(device_, SENSOR_COLOR, "rgb", resolutions_[Camera_RGB_640x480_30Hz]));
       rgb_sensor_->advertise(it_);
     }
+    else
+    {
+      rgb_sensor_.reset(new SensorStreamManagerBase());
+    }
 
     if(device_.hasSensor(SENSOR_DEPTH))
     {
-      VideoMode def = resolutions_[Camera_DEPTH_640x480_30Hz];
-      def.setPixelFormat(PIXEL_FORMAT_DEPTH_1_MM);
-
-      depth_sensor_.reset(new DepthSensorStreamManager(device_, def));
+      depth_sensor_.reset(new DepthSensorStreamManager(device_, resolutions_[Camera_DEPTH_640x480_30Hz]));
       depth_sensor_->advertise(it_);
+    }
+    else
+    {
+      depth_sensor_.reset(new SensorStreamManagerBase());
     }
 
     if(device_.hasSensor(SENSOR_IR))
     {
       ir_sensor_.reset(new SensorStreamManager(device_, SENSOR_IR, "ir", resolutions_[Camera_IR_640x480_30Hz]));
       ir_sensor_->advertise(it_);
+    }
+    else
+    {
+      ir_sensor_.reset(new SensorStreamManagerBase());
     }
 
     reconfigure_server_.setCallback(boost::bind(&CameraImpl::configure, this, _1, _2));
@@ -465,65 +534,33 @@ public:
     // i don't think this one is supported as it is overridden in XnHostProtocol.cpp#L429
     createVideoMode(resolutions_[Camera_RGB_1280x720_30Hz], 1280, 720, 30, PIXEL_FORMAT_GRAY8);
     createVideoMode(resolutions_[Camera_RGB_1280x1024_30Hz], 1280, 1024, 30, PIXEL_FORMAT_GRAY8);
+
+    createVideoMode(resolutions_[Camera_DEPTH_320x240_30Hz], 320, 240, 30, PIXEL_FORMAT_DEPTH_1_MM);
+    createVideoMode(resolutions_[Camera_DEPTH_320x240_60Hz], 320, 240, 60, PIXEL_FORMAT_DEPTH_1_MM);
+    createVideoMode(resolutions_[Camera_DEPTH_640x480_30Hz], 640, 480, 30, PIXEL_FORMAT_DEPTH_1_MM);
+
+    createVideoMode(resolutions_[Camera_DISPARITY_320x240_30Hz], 320, 240, 30, PIXEL_FORMAT_SHIFT_9_2);
+    createVideoMode(resolutions_[Camera_DISPARITY_320x240_60Hz], 320, 240, 60, PIXEL_FORMAT_SHIFT_9_2);
+    createVideoMode(resolutions_[Camera_DISPARITY_640x480_30Hz], 640, 480, 30, PIXEL_FORMAT_SHIFT_9_2);
+
+    createVideoMode(resolutions_[Camera_IR_320x240_30Hz], 320, 240, 30, PIXEL_FORMAT_GRAY8);
+    createVideoMode(resolutions_[Camera_IR_320x240_60Hz], 320, 240, 60, PIXEL_FORMAT_GRAY8);
+    createVideoMode(resolutions_[Camera_IR_640x480_30Hz], 640, 480, 30, PIXEL_FORMAT_GRAY8);
+    createVideoMode(resolutions_[Camera_IR_1280x1024_30Hz], 1280, 1024, 30, PIXEL_FORMAT_GRAY8);
   }
 
   void configure(CameraConfig& cfg, uint32_t level)
   {
-    if(rgb_sensor_) rgb_sensor_->beginConfigure();
-    if(depth_sensor_) depth_sensor_->beginConfigure();
-    if(ir_sensor_) ir_sensor_->beginConfigure();
-
-    // rgb
-    if((level & 8) != 0 && rgb_sensor_)
+    if(rgb_sensor_->beginConfigure())
     {
-      ResolutionMap::iterator e = resolutions_.find(cfg.rgb_resolution);
-      assert(e != resolutions_.end());
-
-      rgb_sensor_->tryConfigureVideoMode(e->second);
-    }
-
-    // depth
-    if((level & 16) != 0 && depth_sensor_)
-    {
-      ResolutionMap::iterator e = resolutions_.find(cfg.depth_resolution);
-      assert(e != resolutions_.end());
-
-      VideoMode m = e->second;
-      m.setPixelFormat(PIXEL_FORMAT_DEPTH_1_MM);
-
-      depth_sensor_->tryConfigureVideoMode(m);
-    }
-
-    // ir
-    if((level & 32) != 0 && ir_sensor_)
-    {
-      ResolutionMap::iterator e = resolutions_.find(cfg.ir_resolution);
-      assert(e != resolutions_.end());
-
-      ir_sensor_->tryConfigureVideoMode(e->second);
-    }
-
-    if(level & 1)
-    {
-      if(cfg.depth_registration)
+      if((level & 8) != 0)
       {
-        if(device_.isImageRegistrationModeSupported(IMAGE_REGISTRATION_DEPTH_TO_COLOR))
-        {
-          device_.setImageRegistrationMode(IMAGE_REGISTRATION_DEPTH_TO_COLOR);
-        }
-        else
-        {
-          cfg.depth_registration = false;
-        }
-      }
-      else
-      {
-        device_.setImageRegistrationMode(IMAGE_REGISTRATION_OFF);
-      }
-    }
+        ResolutionMap::iterator e = resolutions_.find(cfg.rgb_resolution);
+        assert(e != resolutions_.end());
 
-    if(rgb_sensor_)
-    {
+        rgb_sensor_->tryConfigureVideoMode(e->second);
+      }
+
       if((level & 2) != 0)
       {
         rgb_sensor_->stream().getCameraSettings()->setAutoExposureEnabled(cfg.auto_exposure);
@@ -541,21 +578,59 @@ public:
       rgb_sensor_->endConfigure();
     }
 
-    if(depth_sensor_)
+    if(depth_sensor_->beginConfigure())
     {
+      if((level & 16) != 0)
+      {
+        ResolutionMap::iterator e = resolutions_.find(cfg.depth_resolution);
+        assert(e != resolutions_.end());
+
+        depth_sensor_->tryConfigureVideoMode(e->second);
+      }
+
+      if((level & 1) != 0)
+      {
+        if(cfg.depth_registration)
+        {
+          if(device_.isImageRegistrationModeSupported(IMAGE_REGISTRATION_DEPTH_TO_COLOR))
+          {
+            device_.setImageRegistrationMode(IMAGE_REGISTRATION_DEPTH_TO_COLOR);
+          }
+          else
+          {
+            cfg.depth_registration = false;
+          }
+        }
+        else
+        {
+          device_.setImageRegistrationMode(IMAGE_REGISTRATION_OFF);
+        }
+      }
+
       if((level & 64) != 0)
       {
         depth_sensor_->stream().setMirroringEnabled(cfg.mirror);
       }
+
       depth_sensor_->endConfigure();
     }
 
-    if(ir_sensor_)
+
+    if(ir_sensor_->beginConfigure())
     {
+      if((level & 32) != 0)
+      {
+        ResolutionMap::iterator e = resolutions_.find(cfg.ir_resolution);
+        assert(e != resolutions_.end());
+
+        ir_sensor_->tryConfigureVideoMode(e->second);
+      }
+
       if((level & 64) != 0)
       {
         ir_sensor_->stream().setMirroringEnabled(cfg.mirror);
       }
+
       ir_sensor_->endConfigure();
     }
 
@@ -563,7 +638,7 @@ public:
   }
 private:
   image_transport::ImageTransport it_;
-  boost::shared_ptr<SensorStreamManager> rgb_sensor_, depth_sensor_, ir_sensor_;
+  boost::shared_ptr<SensorStreamManagerBase> rgb_sensor_, depth_sensor_, ir_sensor_;
   dynamic_reconfigure::Server<CameraConfig> reconfigure_server_;
 
   typedef std::map<int, VideoMode> ResolutionMap;
