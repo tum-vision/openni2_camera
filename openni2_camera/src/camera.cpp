@@ -419,6 +419,9 @@ class CameraImpl
 public:
   CameraImpl(ros::NodeHandle& nh, ros::NodeHandle& nh_private, openni::Device& device) :
     it_(nh),
+    rgb_sensor_(new SensorStreamManagerBase()),
+    depth_sensor_(new SensorStreamManagerBase()),
+    ir_sensor_(new SensorStreamManagerBase()),
     reconfigure_server_(nh),
     device_(device)
   {
@@ -426,16 +429,12 @@ public:
     printVideoModes();
     buildResolutionMap();
 
-    device.setDepthColorSyncEnabled(true);
+    device_.setDepthColorSyncEnabled(true);
 
     if(device_.hasSensor(SENSOR_COLOR))
     {
       rgb_sensor_.reset(new SensorStreamManager(device_, SENSOR_COLOR, "rgb", resolutions_[Camera_RGB_640x480_30Hz]));
       rgb_sensor_->advertise(it_);
-    }
-    else
-    {
-      rgb_sensor_.reset(new SensorStreamManagerBase());
     }
 
     if(device_.hasSensor(SENSOR_DEPTH))
@@ -443,19 +442,11 @@ public:
       depth_sensor_.reset(new DepthSensorStreamManager(device_, resolutions_[Camera_DEPTH_640x480_30Hz]));
       depth_sensor_->advertise(it_);
     }
-    else
-    {
-      depth_sensor_.reset(new SensorStreamManagerBase());
-    }
 
     if(device_.hasSensor(SENSOR_IR))
     {
       ir_sensor_.reset(new SensorStreamManager(device_, SENSOR_IR, "ir", resolutions_[Camera_IR_640x480_30Hz]));
       ir_sensor_->advertise(it_);
-    }
-    else
-    {
-      ir_sensor_.reset(new SensorStreamManagerBase());
     }
 
     reconfigure_server_.setCallback(boost::bind(&CameraImpl::configure, this, _1, _2));
@@ -511,7 +502,7 @@ public:
 
       const Array<VideoMode>& modes = info->getSupportedVideoModes();
 
-      for(size_t idx = 0; idx < modes.getSize(); ++idx)
+      for(int idx = 0; idx < modes.getSize(); ++idx)
       {
         const VideoMode& mode = modes[idx];
         ROS_INFO_STREAM("    " << toString(mode.getPixelFormat()) << " " << mode.getResolutionX() << "x" << mode.getResolutionY() << "@" << mode.getFps());
