@@ -142,14 +142,14 @@ public:
     publisher_ = it.advertiseCamera(name_ + "/image_raw", 1, callback_, callback_);
   }
 
-  void beginConfigure()
+  virtual void beginConfigure()
   {
     was_running_ = running_;
     if(was_running_) stream_.stop();
     running_ = false;
   }
 
-  void endConfigure()
+  virtual void endConfigure()
   {
     if(was_running_)
     {
@@ -229,6 +229,7 @@ public:
 
     double scale = double(frame.getWidth()) / double(1280);
 
+    info.header.stamp = ts;
     info.width = frame.getWidth();
     info.height = frame.getHeight();
     info.K.assign(0);
@@ -264,25 +265,30 @@ public:
       ROS_WARN("Unknown OpenNI pixel format!");
       break;
     }
+    img.header.stamp = ts;
     img.height = frame.getHeight();
     img.width = frame.getWidth();
     img.step = frame.getStrideInBytes();
     img.data.resize(frame.getDataSize());
     std::copy(static_cast<const uint8_t*>(frame.getData()), static_cast<const uint8_t*>(frame.getData()) + frame.getDataSize(), img.data.begin());
 
-    publisher_.publish(img, info, ts);
+    publish(img, info);
+  }
+
+  virtual void publish(sensor_msgs::Image& image, sensor_msgs::CameraInfo& camera_info)
+  {
+    publisher_.publish(image, camera_info);
   }
 };
 
 class DepthSensorStreamManager : public SensorStreamManager
 {
 protected:
-  image_transport::CameraPublisher depth_registered_publisher_, disparity_publisher_, disparity_registered_publisher_;
+  image_transport::CameraPublisher depth_registered_publisher_, disparity_publisher_, disparity_registered_publisher_, *active_publisher_;
 
 public:
   DepthSensorStreamManager(Device& device, VideoMode& default_mode) : SensorStreamManager(device, SENSOR_DEPTH, "depth", default_mode)
   {
-
   }
 
   virtual void advertise(image_transport::ImageTransport& it)
@@ -290,10 +296,9 @@ public:
     SensorStreamManager::advertise(it);
 
     depth_registered_publisher_ = it.advertiseCamera(name_ + "_registered/image_raw", 1, callback_, callback_);
-    disparity_publisher_  = it.advertiseCamera("depth/disparity", 1, callback_, callback_);
-    disparity_registered_publisher_  = it.advertiseCamera("depth_registered/disparity", 1, callback_, callback_);
+    disparity_publisher_  = it.advertiseCamera(name_ + "/disparity", 1, callback_, callback_);
+    disparity_registered_publisher_  = it.advertiseCamera(name_ + "_registered/disparity", 1, callback_, callback_);
   }
-
 
   virtual void onSubscriptionChanged(const image_transport::SingleSubscriberPublisher& topic)
   {
@@ -312,69 +317,40 @@ public:
     }
   }
 
-  // TODO refactor me!
-  virtual void onNewFrame(VideoStream& stream)
+  virtual void endConfigure()
   {
-    ros::Time ts = ros::Time::now();
+    SensorStreamManager::endConfigure();
 
-    VideoFrameRef frame;
-    stream.readFrame(&frame);
-
-    sensor_msgs::Image img;
-    sensor_msgs::CameraInfo info;
-
-    double scale = double(frame.getWidth()) / double(1280);
-
-    info.width = frame.getWidth();
-    info.height = frame.getHeight();
-    info.K.assign(0);
-    info.K[0] = 1050.0 * scale;
-    info.K[4] = 1050.0 * scale;
-    info.K[2] = frame.getWidth() / 2.0 - 0.5;
-    info.K[5] = frame.getHeight() / 2.0 - 0.5;
-    info.P.assign(0);
-    info.P[0] = 1050.0 * scale;
-    info.P[5] = 1050.0 * scale;
-    info.P[2] = frame.getWidth() / 2.0 - 0.5;
-    info.P[6] = frame.getHeight() / 2.0 - 0.5;
-
-    img.height = frame.getHeight();
-    img.width = frame.getWidth();
-    img.step = frame.getStrideInBytes();
-    img.encoding = sensor_msgs::image_encodings::MONO16;
-    img.data.resize(frame.getDataSize());
-
-    image_transport::CameraPublisher *p_depth, *p_disparity;
-
-    if(device_.getImageRegistrationMode() == IMAGE_REGISTRATION_DEPTH_TO_COLOR)
+    if(running_)
     {
-      p_depth =  &depth_registered_publisher_;
-      p_disparity = &disparity_registered_publisher_;
+      if(device_.getImageRegistrationMode() == IMAGE_REGISTRATION_DEPTH_TO_COLOR)
+      {
+        if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_DEPTH_1_MM)
+        {
+          active_publisher_ = &depth_registered_publisher_;
+        }
+        else if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_SHIFT_9_2)
+        {
+          active_publisher_ = &disparity_registered_publisher_;
+        }
+      }
+      else
+      {
+        if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_DEPTH_1_MM)
+        {
+          active_publisher_ = &publisher_;
+        }
+        else if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_SHIFT_9_2)
+        {
+          active_publisher_ = &disparity_publisher_;
+        }
+      }
     }
-    else
-    {
-      p_depth =  &publisher_;
-      p_disparity = &disparity_publisher_;
-    }
+  }
 
-    if(p_depth->getNumSubscribers() > 0)
-    {
-      std::copy(static_cast<const uint8_t*>(frame.getData()), static_cast<const uint8_t*>(frame.getData()) + frame.getDataSize(), img.data.begin());
-      p_depth->publish(img, info, ts);
-    }
-
-    /* the disparity is always stored right behind the depth data in the "not public" part of the buffer, at least for PS1080
-     * when output is set to disparity, i.e. PIXEL_FORMAT_SHIFT_9_2,
-     * the values are just duplicated into the "public" buffer part, replacing 0 with 2047,
-     *
-     * there is no performance benefit in using PIXEL_FORMAT_SHIFT_9_2 over PIXEL_FORMAT_DEPTH_1_MM as for both
-     * cases a lookup table is used
-     */
-    if(p_disparity->getNumSubscribers() > 0)
-    {
-      std::copy(static_cast<const uint8_t*>(frame.getData()) + frame.getDataSize(), static_cast<const uint8_t*>(frame.getData()) + frame.getDataSize() * 2, img.data.begin());
-      p_disparity->publish(img, info, ts);
-    }
+  virtual void publish(sensor_msgs::Image& image, sensor_msgs::CameraInfo& camera_info)
+  {
+    active_publisher_->publish(image, camera_info);
   }
 };
 
