@@ -338,32 +338,36 @@ protected:
 
   virtual void publish(sensor_msgs::Image& image, sensor_msgs::CameraInfo& camera_info)
   {
-    active_publisher_->publish(image, camera_info);
+    if(active_publisher_ != 0)
+      active_publisher_->publish(image, camera_info);
   }
 
   void updateActivePublisher()
   {
+    image_transport::CameraPublisher *p_depth, *p_disparity;
+
     if(device_.getImageRegistrationMode() == IMAGE_REGISTRATION_DEPTH_TO_COLOR)
     {
-      if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_DEPTH_1_MM)
-      {
-        active_publisher_ = &depth_registered_publisher_;
-      }
-      else if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_SHIFT_9_2)
-      {
-        active_publisher_ = &disparity_registered_publisher_;
-      }
+      p_depth = &depth_registered_publisher_;
+      p_disparity = &disparity_registered_publisher_;
     }
     else
     {
-      if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_DEPTH_1_MM)
-      {
-        active_publisher_ = &publisher_;
-      }
-      else if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_SHIFT_9_2)
-      {
-        active_publisher_ = &disparity_publisher_;
-      }
+      p_depth = &publisher_;
+      p_disparity = &disparity_publisher_;
+    }
+
+    if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_DEPTH_1_MM)
+    {
+      active_publisher_ = p_depth;
+    }
+    else if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_SHIFT_9_2)
+    {
+      active_publisher_ = p_disparity;
+    }
+    else
+    {
+      active_publisher_ = 0;
     }
   }
 public:
@@ -417,7 +421,7 @@ public:
     rgb_sensor_(new SensorStreamManagerBase()),
     depth_sensor_(new SensorStreamManagerBase()),
     ir_sensor_(new SensorStreamManagerBase()),
-    reconfigure_server_(nh),
+    reconfigure_server_(nh_private),
     device_(device)
   {
     printDeviceInfo();
