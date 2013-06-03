@@ -153,8 +153,10 @@ protected:
 
   ros::NodeHandle nh_;
   image_transport::ImageTransport it_;
+  camera_info_manager::CameraInfoManager camera_info_manager_;
   image_transport::CameraPublisher publisher_;
   image_transport::SubscriberStatusCallback callback_;
+
 
   virtual void publish(sensor_msgs::Image& image, sensor_msgs::CameraInfo& camera_info)
   {
@@ -167,7 +169,8 @@ public:
     name_(name),
     running_(false),
     nh_(nh, name_),
-    it_(nh_)
+    it_(nh_),
+    camera_info_manager_(nh_)
   {
     assert(device_.hasSensor(type));
 
