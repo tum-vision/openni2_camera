@@ -533,10 +533,10 @@ public:
     createVideoMode(resolutions_[Camera_DISPARITY_320x240_60Hz], 320, 240, 60, PIXEL_FORMAT_SHIFT_9_2);
     createVideoMode(resolutions_[Camera_DISPARITY_640x480_30Hz], 640, 480, 30, PIXEL_FORMAT_SHIFT_9_2);
 
-    createVideoMode(resolutions_[Camera_IR_320x240_30Hz], 320, 240, 30, PIXEL_FORMAT_GRAY8);
-    createVideoMode(resolutions_[Camera_IR_320x240_60Hz], 320, 240, 60, PIXEL_FORMAT_GRAY8);
-    createVideoMode(resolutions_[Camera_IR_640x480_30Hz], 640, 480, 30, PIXEL_FORMAT_GRAY8);
-    createVideoMode(resolutions_[Camera_IR_1280x1024_30Hz], 1280, 1024, 30, PIXEL_FORMAT_GRAY8);
+    createVideoMode(resolutions_[Camera_IR_320x240_30Hz], 320, 240, 30, PIXEL_FORMAT_RGB888);
+    createVideoMode(resolutions_[Camera_IR_320x240_60Hz], 320, 240, 60, PIXEL_FORMAT_RGB888);
+    createVideoMode(resolutions_[Camera_IR_640x480_30Hz], 640, 480, 30, PIXEL_FORMAT_RGB888);
+    createVideoMode(resolutions_[Camera_IR_1280x1024_30Hz], 1280, 1024, 30, PIXEL_FORMAT_RGB888);
   }
 
   void configure(CameraConfig& cfg, uint32_t level)
