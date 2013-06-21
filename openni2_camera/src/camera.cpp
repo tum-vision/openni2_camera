@@ -522,8 +522,12 @@ public:
     createVideoMode(resolutions_[Camera_RGB_320x240_60Hz], 320, 240, 60, PIXEL_FORMAT_RGB888);
     createVideoMode(resolutions_[Camera_RGB_640x480_30Hz], 640, 480, 30, PIXEL_FORMAT_RGB888);
     // i don't think this one is supported as it is overridden in XnHostProtocol.cpp#L429
-    createVideoMode(resolutions_[Camera_RGB_1280x720_30Hz], 1280, 720, 30, PIXEL_FORMAT_GRAY8);
-    createVideoMode(resolutions_[Camera_RGB_1280x1024_30Hz], 1280, 1024, 30, PIXEL_FORMAT_GRAY8);
+    createVideoMode(resolutions_[Camera_RGB_1280x720_30Hz], 1280, 720, 30, PIXEL_FORMAT_RGB888);
+    createVideoMode(resolutions_[Camera_RGB_1280x1024_30Hz], 1280, 1024, 30, PIXEL_FORMAT_RGB888);
+    createVideoMode(resolutions_[Camera_YUV_320x240_30Hz], 320, 240, 30, PIXEL_FORMAT_YUV422);
+    createVideoMode(resolutions_[Camera_YUV_320x240_60Hz], 320, 240, 60, PIXEL_FORMAT_YUV422);
+    createVideoMode(resolutions_[Camera_YUV_640x480_30Hz], 640, 480, 30, PIXEL_FORMAT_YUV422);
+    createVideoMode(resolutions_[Camera_YUV_1280x1024_30Hz], 1280, 1024, 30, PIXEL_FORMAT_YUV422);
 
     createVideoMode(resolutions_[Camera_DEPTH_320x240_30Hz], 320, 240, 30, PIXEL_FORMAT_DEPTH_1_MM);
     createVideoMode(resolutions_[Camera_DEPTH_320x240_60Hz], 320, 240, 60, PIXEL_FORMAT_DEPTH_1_MM);
