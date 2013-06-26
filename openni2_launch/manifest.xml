@@ -1,0 +1,16 @@
+<package>
+  <description brief="openni2_launch">
+    openni2_launch based on the openni_launch package
+  </description>
+  <author>Christian Kerl</author>
+  <license>MIT</license>
+  <review status="unreviewed" notes=""/>
+  <url></url>
+
+  <depend package="depth_image_proc"/>
+  <depend package="image_proc"/>
+  <depend package="nodelet"/>
+  <depend package="openni2_camera"/>
+  <depend package="tf"/>
+
+</package>
