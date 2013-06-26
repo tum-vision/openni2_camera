@@ -148,7 +148,7 @@ protected:
   Device& device_;
   VideoStream stream_;
   VideoMode default_mode_;
-  std::string name_;
+  std::string name_, frame_id_;
   bool running_, was_running_;
 
   ros::NodeHandle nh_;
@@ -158,15 +158,16 @@ protected:
   image_transport::SubscriberStatusCallback callback_;
 
 
-  virtual void publish(sensor_msgs::Image& image, sensor_msgs::CameraInfo& camera_info)
+  virtual void publish(sensor_msgs::Image::Ptr& image, sensor_msgs::CameraInfo::Ptr& camera_info)
   {
     publisher_.publish(image, camera_info);
   }
 public:
-  SensorStreamManager(ros::NodeHandle& nh, Device& device, SensorType type, std::string name, VideoMode& default_mode) :
+  SensorStreamManager(ros::NodeHandle& nh, Device& device, SensorType type, std::string name, std::string frame_id, VideoMode& default_mode) :
     device_(device),
     default_mode_(default_mode),
     name_(name),
+    frame_id_(frame_id),
     running_(false),
     nh_(nh, name_),
     it_(nh_),
@@ -280,53 +281,55 @@ public:
     VideoFrameRef frame;
     stream.readFrame(&frame);
 
-    sensor_msgs::Image img;
-    sensor_msgs::CameraInfo info;
+    sensor_msgs::Image::Ptr img(new sensor_msgs::Image);
+    sensor_msgs::CameraInfo::Ptr info(new sensor_msgs::CameraInfo);
 
     double scale = double(frame.getWidth()) / double(1280);
 
-    info.header.stamp = ts;
-    info.width = frame.getWidth();
-    info.height = frame.getHeight();
-    info.K.assign(0);
-    info.K[0] = 1050.0 * scale;
-    info.K[4] = 1050.0 * scale;
-    info.K[2] = frame.getWidth() / 2.0 - 0.5;
-    info.K[5] = frame.getHeight() / 2.0 - 0.5;
-    info.P.assign(0);
-    info.P[0] = 1050.0 * scale;
-    info.P[5] = 1050.0 * scale;
-    info.P[2] = frame.getWidth() / 2.0 - 0.5;
-    info.P[6] = frame.getHeight() / 2.0 - 0.5;
+    info->header.stamp = ts;
+    info->header.frame_id = frame_id_;
+    info->width = frame.getWidth();
+    info->height = frame.getHeight();
+    info->K.assign(0);
+    info->K[0] = 1050.0 * scale;
+    info->K[4] = 1050.0 * scale;
+    info->K[2] = frame.getWidth() / 2.0 - 0.5;
+    info->K[5] = frame.getHeight() / 2.0 - 0.5;
+    info->P.assign(0);
+    info->P[0] = 1050.0 * scale;
+    info->P[5] = 1050.0 * scale;
+    info->P[2] = frame.getWidth() / 2.0 - 0.5;
+    info->P[6] = frame.getHeight() / 2.0 - 0.5;
 
     switch(frame.getVideoMode().getPixelFormat())
     {
     case PIXEL_FORMAT_GRAY8:
-      img.encoding = sensor_msgs::image_encodings::MONO8;
+      img->encoding = sensor_msgs::image_encodings::MONO8;
       break;
     case PIXEL_FORMAT_GRAY16:
-      img.encoding = sensor_msgs::image_encodings::MONO16;
+      img->encoding = sensor_msgs::image_encodings::MONO16;
       break;
     case PIXEL_FORMAT_YUV422:
-      img.encoding = sensor_msgs::image_encodings::YUV422;
+      img->encoding = sensor_msgs::image_encodings::YUV422;
       break;
     case PIXEL_FORMAT_RGB888:
-      img.encoding = sensor_msgs::image_encodings::RGB8;
+      img->encoding = sensor_msgs::image_encodings::RGB8;
       break;
     case PIXEL_FORMAT_SHIFT_9_2:
     case PIXEL_FORMAT_DEPTH_1_MM:
-      img.encoding = sensor_msgs::image_encodings::MONO16;
+      img->encoding = sensor_msgs::image_encodings::TYPE_16UC1;
       break;
     default:
       ROS_WARN("Unknown OpenNI pixel format!");
       break;
     }
-    img.header.stamp = ts;
-    img.height = frame.getHeight();
-    img.width = frame.getWidth();
-    img.step = frame.getStrideInBytes();
-    img.data.resize(frame.getDataSize());
-    std::copy(static_cast<const uint8_t*>(frame.getData()), static_cast<const uint8_t*>(frame.getData()) + frame.getDataSize(), img.data.begin());
+    img->header.stamp = ts;
+    img->header.frame_id = frame_id_;
+    img->height = frame.getHeight();
+    img->width = frame.getWidth();
+    img->step = frame.getStrideInBytes();
+    img->data.resize(frame.getDataSize());
+    std::copy(static_cast<const uint8_t*>(frame.getData()), static_cast<const uint8_t*>(frame.getData()) + frame.getDataSize(), img->data.begin());
 
     publish(img, info);
   }
@@ -338,8 +341,9 @@ protected:
   ros::NodeHandle nh_registered_;
   image_transport::ImageTransport it_registered_;
   image_transport::CameraPublisher depth_registered_publisher_, disparity_publisher_, disparity_registered_publisher_, *active_publisher_;
+  std::string rgb_frame_id_, depth_frame_id_;
 
-  virtual void publish(sensor_msgs::Image& image, sensor_msgs::CameraInfo& camera_info)
+  virtual void publish(sensor_msgs::Image::Ptr& image, sensor_msgs::CameraInfo::Ptr& camera_info)
   {
     if(active_publisher_ != 0)
       active_publisher_->publish(image, camera_info);
@@ -353,11 +357,13 @@ protected:
     {
       p_depth = &depth_registered_publisher_;
       p_disparity = &disparity_registered_publisher_;
+      frame_id_ = rgb_frame_id_;
     }
     else
     {
       p_depth = &publisher_;
       p_disparity = &disparity_publisher_;
+      frame_id_ = depth_frame_id_;
     }
 
     if(stream_.getVideoMode().getPixelFormat() == PIXEL_FORMAT_DEPTH_1_MM)
@@ -374,10 +380,13 @@ protected:
     }
   }
 public:
-  DepthSensorStreamManager(ros::NodeHandle& nh, Device& device, VideoMode& default_mode) :
-    SensorStreamManager(nh, device, SENSOR_DEPTH, "depth", default_mode),
+  DepthSensorStreamManager(ros::NodeHandle& nh, Device& device, std::string rgb_frame_id, std::string depth_frame_id, VideoMode& default_mode) :
+    SensorStreamManager(nh, device, SENSOR_DEPTH, "depth", depth_frame_id, default_mode),
     nh_registered_(nh, "depth_registered"),
-    it_registered_(nh_registered_)
+    it_registered_(nh_registered_),
+    active_publisher_(0),
+    rgb_frame_id_(rgb_frame_id),
+    depth_frame_id_(depth_frame_id)
   {
     depth_registered_publisher_ = it_registered_.advertiseCamera("image_raw", 1, callback_, callback_);
     disparity_publisher_ = it_.advertiseCamera("disparity", 1, callback_, callback_);
@@ -420,32 +429,36 @@ public:
 class CameraImpl
 {
 public:
-  CameraImpl(ros::NodeHandle& nh, ros::NodeHandle& nh_private, openni::Device& device) :
+  CameraImpl(ros::NodeHandle& nh, ros::NodeHandle& nh_private, const openni::DeviceInfo& device_info) :
     rgb_sensor_(new SensorStreamManagerBase()),
     depth_sensor_(new SensorStreamManagerBase()),
     ir_sensor_(new SensorStreamManagerBase()),
-    reconfigure_server_(nh_private),
-    device_(device)
+    reconfigure_server_(nh_private)
   {
+    device_.open(device_info.getUri());
+
     printDeviceInfo();
     printVideoModes();
     buildResolutionMap();
 
     device_.setDepthColorSyncEnabled(true);
 
+    // TODO: get from parameters
+    std::string rgb_frame_id = "camera_rgb_optical_frame", depth_frame_id = "camera_depth_optical_frame";
+
     if(device_.hasSensor(SENSOR_COLOR))
     {
-      rgb_sensor_.reset(new SensorStreamManager(nh, device_, SENSOR_COLOR, "rgb", resolutions_[Camera_RGB_640x480_30Hz]));
+      rgb_sensor_.reset(new SensorStreamManager(nh, device_, SENSOR_COLOR, "rgb", rgb_frame_id, resolutions_[Camera_RGB_640x480_30Hz]));
     }
 
     if(device_.hasSensor(SENSOR_DEPTH))
     {
-      depth_sensor_.reset(new DepthSensorStreamManager(nh, device_, resolutions_[Camera_DEPTH_640x480_30Hz]));
+      depth_sensor_.reset(new DepthSensorStreamManager(nh, device_, rgb_frame_id, depth_frame_id, resolutions_[Camera_DEPTH_640x480_30Hz]));
     }
 
     if(device_.hasSensor(SENSOR_IR))
     {
-      ir_sensor_.reset(new SensorStreamManager(nh, device_, SENSOR_IR, "ir", resolutions_[Camera_IR_640x480_30Hz]));
+      ir_sensor_.reset(new SensorStreamManager(nh, device_, SENSOR_IR, "ir", depth_frame_id, resolutions_[Camera_IR_640x480_30Hz]));
     }
 
     reconfigure_server_.setCallback(boost::bind(&CameraImpl::configure, this, _1, _2));
@@ -453,6 +466,11 @@ public:
 
   ~CameraImpl()
   {
+    rgb_sensor_.reset();
+    depth_sensor_.reset();
+    ir_sensor_.reset();
+
+    device_.close();
   }
 
   void printDeviceInfo()
@@ -638,14 +656,14 @@ private:
 
   ResolutionMap resolutions_;
 
-  Device& device_;
+  Device device_;
 };
 
 
 } /* namespace internal */
 
-Camera::Camera(ros::NodeHandle& nh, ros::NodeHandle& nh_private, openni::Device& device) :
-    impl_(new internal::CameraImpl(nh, nh_private, device))
+Camera::Camera(ros::NodeHandle& nh, ros::NodeHandle& nh_private, const openni::DeviceInfo& device_info) :
+    impl_(new internal::CameraImpl(nh, nh_private, device_info))
 {
 }
 

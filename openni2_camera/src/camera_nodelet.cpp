@@ -21,26 +21,25 @@
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
-#include <ros/ros.h>
-#include <openni2_camera/camera_factory.h>
+#include <openni2_camera/camera_nodelet.h>
+#include <pluginlib/class_list_macros.h>
 
-int main(int argc, char **argv)
+PLUGINLIB_DECLARE_CLASS(openni2_camera, camera_nodelet, openni2_camera::CameraNodelet, nodelet::Nodelet)
+
+namespace openni2_camera
 {
-  ros::init(argc, argv, "camera_node");
 
-  ros::NodeHandle nh("camera");
-  ros::NodeHandle nh_private("~");
-
-  openni2_camera::CameraFactory camera_factory;
-
-  if(camera_factory.create(nh, nh_private, "#1"))
-  {
-    ros::spin();
-  }
-  else
-  {
-    ROS_ERROR("Failed to open camera!");
-  }
-
-  return 0;
+CameraNodelet::CameraNodelet()
+{
 }
+
+CameraNodelet::~CameraNodelet()
+{
+}
+
+void CameraNodelet::onInit()
+{
+  ROS_ERROR_COND(!camera_factory_.create(getNodeHandle(), getPrivateNodeHandle(), "#1"), "Failed to open camera!");
+}
+
+} /* namespace openni2_camera */

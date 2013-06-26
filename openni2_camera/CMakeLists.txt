@@ -21,7 +21,26 @@ rosbuild_find_ros_package(dynamic_reconfigure)
 include(${dynamic_reconfigure_PACKAGE_PATH}/cmake/cfgbuild.cmake)
 gencfg()
 
+rosbuild_add_library(${PROJECT_NAME}
+  src/camera.cpp
+  src/camera_factory.cpp
+)
+
+
+# nodelet
+rosbuild_add_library(camera_nodelet
+  src/camera_nodelet.cpp 
+)
+
+target_link_libraries(camera_nodelet
+  ${PROJECT_NAME}
+)
+
+# node
 rosbuild_add_executable(camera_node 
-    src/camera_node.cpp 
-    src/camera.cpp
+  src/camera_node.cpp 
+)
+
+target_link_libraries(camera_node
+  ${PROJECT_NAME}
 )

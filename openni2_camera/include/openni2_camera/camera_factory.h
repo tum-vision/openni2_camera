@@ -21,26 +21,26 @@
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#ifndef CAMERA_FACTORY_H_
+#define CAMERA_FACTORY_H_
+
 #include <ros/ros.h>
-#include <openni2_camera/camera_factory.h>
+#include <openni2_camera/camera.h>
 
-int main(int argc, char **argv)
+namespace openni2_camera
 {
-  ros::init(argc, argv, "camera_node");
 
-  ros::NodeHandle nh("camera");
-  ros::NodeHandle nh_private("~");
+class CameraFactory
+{
+public:
+  CameraFactory();
+  ~CameraFactory();
 
-  openni2_camera::CameraFactory camera_factory;
+  bool create(ros::NodeHandle& nh, ros::NodeHandle& nh_private, const std::string& device_id);
+private:
+  openni2_camera::Camera *camera_;
+  bool initialized_;
+};
 
-  if(camera_factory.create(nh, nh_private, "#1"))
-  {
-    ros::spin();
-  }
-  else
-  {
-    ROS_ERROR("Failed to open camera!");
-  }
-
-  return 0;
-}
+} /* namespace openni2_camera */
+#endif /* CAMERA_FACTORY_H_ */

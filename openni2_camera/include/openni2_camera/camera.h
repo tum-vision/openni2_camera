@@ -39,7 +39,7 @@ namespace internal
 class Camera
 {
 public:
-  Camera(ros::NodeHandle& nh, ros::NodeHandle& nh_private, openni::Device& device);
+  Camera(ros::NodeHandle& nh, ros::NodeHandle& nh_private, const openni::DeviceInfo& device_info);
   virtual ~Camera();
 private:
   internal::CameraImpl* impl_;
