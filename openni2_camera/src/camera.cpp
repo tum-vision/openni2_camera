@@ -443,8 +443,9 @@ public:
 
     device_.setDepthColorSyncEnabled(true);
 
-    // TODO: get from parameters
-    std::string rgb_frame_id = "camera_rgb_optical_frame", depth_frame_id = "camera_depth_optical_frame";
+    std::string rgb_frame_id, depth_frame_id;
+    nh_private.param(std::string("rgb_frame_id"), rgb_frame_id, std::string("camera_rgb_optical_frame"));
+    nh_private.param(std::string("depth_frame_id"), depth_frame_id, std::string("camera_depth_optical_frame"));
 
     if(device_.hasSensor(SENSOR_COLOR))
     {
