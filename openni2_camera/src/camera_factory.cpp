@@ -41,21 +41,74 @@ CameraFactory::~CameraFactory()
   openni::OpenNI::shutdown();
 }
 
-bool CameraFactory::create(ros::NodeHandle& nh, ros::NodeHandle& nh_private, const std::string& device_id)
+bool CameraFactory::create(ros::NodeHandle& nh, ros::NodeHandle& nh_private, const std::string& device_id_default)
 {
   bool success = false;
 
   openni::Array<openni::DeviceInfo> devices;
   openni::OpenNI::enumerateDevices(&devices);
 
-  if(devices.getSize() > 0)
+  openni::DeviceInfo used_device;
+  std::string device_id;
+
+  int device_count = devices.getSize();
+
+  if(device_count > 0)
   {
-    camera_ = new openni2_camera::Camera(nh, nh_private, devices[0]);
-    success = true;
+    ROS_INFO("openni2 detected %d cameras.", device_count);
+    //select the desired device via the device_id parameter of the .launch file
+    if(!nh_private.getParam("device_id", device_id)) {
+      ROS_WARN("parameter ~device_id is not set! Using default value %s.", device_id_default.c_str());
+      device_id = device_id_default;
+    }
+    else
+    {
+      ROS_INFO("openni2_camera using parameter device_id = %s", device_id.c_str());
+    }
+
+    //device_id is given in usb bus@address format
+    if (device_id.find ('@') != std::string::npos)
+    {
+      size_t   at_pos  = device_id.find ('@');
+      unsigned bus     = atoi(device_id.substr(0, at_pos).c_str());
+      unsigned address = atoi(device_id.substr(at_pos+1, device_id.length()-at_pos-1).c_str());
+      ROS_INFO ("Using camera device at bus@address = %d@%d", bus, address);
+
+      //TODO: implement function for getting device by address..
+      //used_device = device_by_address(bus, address);
+    }
+    //device is given in #index format
+    else if (device_id[0] == '#')
+    {
+      int dev_index = atoi(device_id.c_str() + 1);
+
+      if(dev_index > device_count) {
+        ROS_ERROR("You selected device #%d, but only %d are present.", dev_index, device_count);
+        return false;
+      }
+      ROS_INFO ("Using camera device at index = #%d", dev_index);
+      used_device = devices[dev_index - 1];
+      success = true;
+    }
+    //device should be selected by its serial number
+    else
+    {
+      ROS_INFO("Using device with serial number '%s'", device_id.c_str());
+
+      used_device = devices[0];
+      //TODO: implement function for getting device by address..
+      //used_device = device_by_serial(device_id);
+    }
+
+    if(success) {
+      camera_ = new openni2_camera::Camera(nh, nh_private, used_device);
+    }
+  }
+  else {
+    ROS_ERROR("OpenNI2 found no devices!");
   }
 
   return success;
 }
 
 } /* namespace openni2_camera */
-
