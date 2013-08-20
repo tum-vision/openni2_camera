@@ -26,7 +26,7 @@
 
 #include <ros/ros.h>
 
-#include <OpenNI2/OpenNI.h>
+#include <openni2/OpenNI.h>
 
 namespace openni2_camera
 {
