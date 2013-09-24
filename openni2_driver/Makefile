@@ -20,8 +20,8 @@ openni2_driver_build: download
 openni2_driver: openni2_driver_build 
 	$(eval ONI_DIR=`pwd`/$(GIT_DIR)/Packaging/`ls $(GIT_DIR)/Packaging/ | grep OpenNI-`)
 	echo $(ONI_DIR) && \
-	mkdir -p include/OpenNI2 && mkdir -p lib && \
-	cp -r $(ONI_DIR)/Include/* ./include/OpenNI2/ && \
+	mkdir -p include/openni2 && mkdir -p lib && \
+	cp -r $(ONI_DIR)/Include/* ./include/openni2/ && \
 	cp -r $(ONI_DIR)/Redist/* ./lib/ && \
 	cp ./cfg/OpenNI.ini ./lib/ && \
 	cp ./cfg/PS1080.ini ./lib/OpenNI2/Drivers
